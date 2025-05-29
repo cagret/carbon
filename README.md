@@ -16,7 +16,7 @@ We believe it's time to shift perspective:
 
 ## Why it matters
 
-Digital tools consume real energy — and depending on how that energy is produced, the ecological footprint can vary dramatically. In an age of climate urgency, developers must become conscious of:
+Digital tools consume real energy and depending on how that energy is produced, the ecological footprint can vary dramatically. In an age of climate urgency, developers must become conscious of:
 - The impact of inefficient code.
 - The benefit of **running fewer, smarter jobs** rather than brute-forcing.
 - The ecological value of **efficient, low-level languages like C** that can do more with less.
