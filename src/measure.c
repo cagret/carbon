@@ -7,42 +7,72 @@
 #include <fcntl.h>
 #include <string.h>
 #include <time.h>
+#include <dirent.h>
 #include <sys/resource.h>
+
+#define ENERGY_FILE "energy_uj"
+#define RAPL_BASE_PATH "/sys/class/powercap"
+#define MAX_PATH 256
+
+static char rapl_energy_path[MAX_PATH] = {0};
+static bool rapl_checked = false;
+static bool rapl_available = false;
 
 static struct timespec start_real, end_real;
 static struct rusage start_rusage, end_rusage;
 static double energy_start_cpu = 0.0;
 static double energy_start_gpu = 0.0;
 
-static bool rapl_available = false;
-
 bool detect_rapl(void) {
-    static bool detected = false;
-    static bool checked = false;
+    if (rapl_checked)
+        return rapl_available;
 
-    if (!checked) {
-        int fd = open("/sys/class/powercap/intel-rapl:0/energy_uj", O_RDONLY);
-        if (fd < 0)
-            detected = false;
-        else {
-            detected = true;
-            close(fd);
-        }
-        checked = true;
+    DIR *dir = opendir(RAPL_BASE_PATH);
+    if (!dir) {
+        rapl_checked = true;
+        return false;
     }
-    return detected;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strncmp(entry->d_name, "intel-rapl:", 11) == 0) {
+            int written = snprintf(rapl_energy_path, sizeof(rapl_energy_path),
+                       "%s/%s/%s", RAPL_BASE_PATH, entry->d_name, ENERGY_FILE);
+	    if (written < 0 || (size_t)written >= sizeof(rapl_energy_path)) {
+		    fprintf(stderr, "RAPL path too long, skipping %s\n", entry->d_name);
+		    continue;
+	    }
+            int fd = open(rapl_energy_path, O_RDONLY);
+            if (fd >= 0) {
+                close(fd);
+                rapl_available = true;
+                break;
+            }
+        }
+    }
+
+    closedir(dir);
+    rapl_checked = true;
+    return rapl_available;
 }
 
+
 double read_rapl(void) {
-    int fd = open("/sys/class/powercap/intel-rapl:0/energy_uj", O_RDONLY);
+    if (!detect_rapl())
+        return -1.0;
+
+    int fd = open(rapl_energy_path, O_RDONLY);
     if (fd < 0)
-        return -1;
+        return -1.0;
+
     char buf[32] = {0};
     ssize_t len = read(fd, buf, sizeof(buf) - 1);
     close(fd);
+
     if (len <= 0)
-        return -1;
-    return atof(buf)/1e6;
+        return -1.0;
+
+    return atof(buf) / 1e6;
 }
 
 bool detect_nvml(void) {
@@ -57,8 +87,7 @@ void measure_start(void) {
     clock_gettime(CLOCK_MONOTONIC, &start_real);
     getrusage(RUSAGE_SELF, &start_rusage);
 
-    rapl_available = detect_rapl();
-    if (rapl_available) {
+    if (detect_rapl()) {
         energy_start_cpu = read_rapl();
     } else {
         energy_start_cpu = 0.0;
